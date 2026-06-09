@@ -1,0 +1,12 @@
+*
+
+!.gitignore
+!LICENSE
+!README.md
+!anykernel.sh
+
+!META-INF/
+!META-INF/**
+
+!tools/
+!tools/**
