@@ -9,12 +9,12 @@ Flashable AnyKernel3 package providing KernelSU Next and SUSFS support for Poco 
 ### Flashing Instructions
 
 1. Reboot to OrangeFox Recovery.
-2. Flash the latest `ksun_susfs-marble-YYYY.MM.DD-signed.zip` matching your ROM build date.
+2. Flash the latest `ksun_susfs-marble-YYYY.MM.DD.zip` matching your ROM build date.
 
 Examples:
 
-- InfinityX 2026-06-09 → `ksun_susfs-marble-2026.06.09-signed.zip`
-- AxionOS 2026-06-09 → `ksun_susfs-marble-2026.06.09-signed.zip`
+- InfinityX 2026-06-09 → `ksun_susfs-marble-2026.06.09.zip`
+- AxionOS 2026-06-09 → `ksun_susfs-marble-2026.06.09.zip`
 
 Always use the kernel package corresponding to your ROM's build date.
 
@@ -36,7 +36,7 @@ Download the latest release from the [Releases](../../releases) section.
 - [osm0sis (AnyKernel3)](https://github.com/osm0sis/AnyKernel3)
 - [LineageOS](https://github.com/LineageOS)
 - [jinetty](https://github.com/jinetty)
-
+- [mohdakil2426](https://github.com/mohdakil2426)
 ## Maintainer
 
 PabloEscobar

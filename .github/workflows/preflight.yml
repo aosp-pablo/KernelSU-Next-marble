@@ -1,0 +1,48 @@
+name: Marble Builder Preflight
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout builder
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install static check tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+
+      - name: Run shell syntax checks
+        run: bash -n scripts/*.sh scripts/lib/*.sh tests/*.sh
+
+      - name: Run shellcheck
+        run: shellcheck -e SC1090,SC1091,SC2016,SC2153,SC2154 scripts/*.sh scripts/lib/*.sh tests/*.sh
+
+      - name: Run actionlint
+        run: actionlint
+
+      - name: Run policy tests
+        run: bash tests/test-*.sh
+
+      - name: Check whitespace
+        run: git diff --check

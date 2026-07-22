@@ -1,0 +1,608 @@
+name: Build Marble Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_all:
+        description: "Build: ALL managers"
+        type: boolean
+        default: false
+      build_kernelsu:
+        description: "Build: KernelSU (no SUSFS)"
+        type: boolean
+        default: false
+      build_kernelsu_next:
+        description: "Build: KernelSU-Next"
+        type: boolean
+        default: false
+      build_sukisu_ultra:
+        description: "Build: SukiSU Ultra"
+        type: boolean
+        default: false
+      build_resukisu:
+        description: "Build: ReSukiSU"
+        type: boolean
+        default: false
+      kernel_source:
+        description: "Kernel source preset"
+        type: choice
+        default: aosp-pablo
+        options:
+          - aosp-pablo
+      source_ref:
+        description: "Override branch/tag/commit (empty = preset default)"
+        required: false
+        default: ""
+      build_scope:
+        description: Build target set
+        type: choice
+        default: image-only
+        options:
+          - image-only
+          - full
+      toolchain:
+        description: "Compiler toolchain (auto = preset recommended)"
+        type: choice
+        default: auto
+        options:
+          - auto
+          - android-r416183b
+          - llvm-22.1.8
+      lto:
+        description: "Clang LTO mode"
+        type: choice
+        default: thin
+        options:
+          - none
+          - thin
+          - full
+      enable_ccache:
+        description: Enable ccache
+        type: boolean
+        default: true
+      create_draft_release:
+        description: Create a draft GitHub release when the build succeeds
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.kernel_source }}-${{ inputs.toolchain }}-${{ inputs.lto }}-${{ inputs.build_scope }}
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    name: Generate build matrix
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - name: Checkout builder
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Validate policy
+        run: |
+          for test_script in \
+            tests/test-workflow-policy.sh \
+            tests/test-lto-policy.sh \
+            tests/test-manager-policy.sh \
+            tests/test-matrix-generator.sh \
+            tests/test-susfs-presets.sh
+          do
+            env -u SOURCE_REPO -u SOURCE_REF -u MANAGER -u MANAGER_REF -u ENABLE_SUSFS \
+              bash "${test_script}"
+          done
+
+      - name: Generate build matrix
+        id: gen
+        env:
+          BUILD_ALL: ${{ inputs.build_all }}
+          BUILD_KERNELSU: ${{ inputs.build_kernelsu }}
+          BUILD_KERNELSU_NEXT: ${{ inputs.build_kernelsu_next }}
+          BUILD_SUKISU_ULTRA: ${{ inputs.build_sukisu_ultra }}
+          BUILD_RESUKISU: ${{ inputs.build_resukisu }}
+        run: |
+          matrix="$(bash scripts/generate-build-matrix.sh)"
+          echo "Generated matrix: ${matrix}"
+
+  build:
+    name: Build - ${{ matrix.label }}
+    needs: setup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      KERNEL_SOURCE: ${{ inputs.kernel_source }}
+      SOURCE_REF: ${{ inputs.source_ref }}
+      MANAGER: ${{ matrix.manager }}
+      MANAGER_REF: ""
+      ENABLE_SUSFS: ${{ fromJSON(matrix.enable_susfs) }}
+      BUILD_SCOPE: ${{ inputs.build_scope }}
+      KERNEL_DIR: kernel-source
+      CCACHE_DIR: /home/runner/.ccache
+      USE_CCACHE: ${{ inputs.enable_ccache }}
+      TOOLCHAIN: ${{ inputs.toolchain }}
+      LTO: ${{ inputs.lto }}
+      ANDROID_CLANG_BIN: ${{ github.workspace }}/android-clang/clang-r416183b/bin
+      LLVM_22_1_8_BIN: ${{ github.workspace }}/llvm-22.1.8/bin
+
+    steps:
+      - name: Checkout builder
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Resolve kernel source preset
+        id: kernel-source
+        run: bash scripts/resolve-kernel-source.sh
+
+      - name: Resolve toolchain
+        run: bash scripts/resolve-toolchain.sh
+
+      - name: Validate inputs
+        run: bash scripts/validate-inputs.sh
+
+      - name: Checkout kernel source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ steps.kernel-source.outputs.source_repo }}
+          ref: ${{ steps.kernel-source.outputs.source_ref }}
+          path: kernel-source
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout additional repos
+        run: |
+          count="${ADDITIONAL_CHECKOUT_COUNT:-0}"
+          if [[ "${count}" -eq 0 ]]; then
+            echo "No additional checkouts defined"
+            exit 0
+          fi
+          for i in $(seq 1 "${count}"); do
+            var_repo="ADDITIONAL_CHECKOUT_${i}_REPO"
+            var_ref="ADDITIONAL_CHECKOUT_${i}_REF"
+            var_target="ADDITIONAL_CHECKOUT_${i}_TARGET"
+            repo="${!var_repo}"
+            ref="${!var_ref}"
+            target="${!var_target}"
+            if [[ -z "${repo}" || -z "${target}" ]]; then
+              echo "::warning::Skipping checkout ${i}"
+              continue
+            fi
+            echo "Cloning ${repo}@${ref} -> kernel-source/${target}"
+            git clone --depth=1 -b "${ref}" "https://github.com/${repo}" "kernel-source/${target}"
+          done
+
+      - name: Check disk space
+        id: disk-space
+        run: |
+          available_gib="$(df --output=avail -BG / | tail -n1 | tr -dc '0-9')"
+          echo "available_gib=${available_gib}" >> "$GITHUB_OUTPUT"
+          if (( available_gib < 40 )) || [[ "${{ inputs.lto }}" != "none" ]]; then
+            sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+              /usr/local/share/boost /usr/share/swift || true
+          else
+            sudo rm -rf /usr/share/dotnet /opt/ghc || true
+          fi
+          df -h /
+
+      - name: Setup swap for LTO
+        if: ${{ inputs.lto != 'none' }}
+        uses: pierotofy/set-swap-space@49819abfb41bd9b44fb781159c033dba90353a7c # v1.0
+        with:
+          swap-size-gb: 16
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ccache cpio curl flex git jq kmod libelf-dev \
+            libncurses-dev libssl-dev lld llvm clang file python3 python-is-python3 \
+            rsync unzip zip zstd
+
+      - name: Restore Android clang cache
+        if: ${{ env.TOOLCHAIN == 'android-r416183b' }}
+        id: android-clang-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: android-clang
+          key: marble-builder-clang-v3-${{ runner.os }}-${{ runner.arch }}-clang-r416183b-6e3223f
+
+      - name: Fetch Android clang
+        if: ${{ env.TOOLCHAIN == 'android-r416183b' }}
+        run: |
+          source config/marble.env
+          if [[ -x "${ANDROID_CLANG_BIN}/clang" ]]; then
+            "${ANDROID_CLANG_BIN}/clang" --version
+            exit 0
+          fi
+          toolchain_repo="${RUNNER_TEMP}/android-clang-repo"
+          for attempt in 1 2 3; do
+            rm -rf "${toolchain_repo}"
+            if git clone --filter=blob:none --no-checkout --depth=1 \
+              --branch "${ANDROID_CLANG_REF}" "${ANDROID_CLANG_REPO}" "${toolchain_repo}"; then
+              break
+            fi
+            if (( attempt == 3 )); then
+              echo "::error::Failed to fetch Android Clang"
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+          actual_commit="$(git -C "${toolchain_repo}" rev-parse HEAD)"
+          if [[ "${actual_commit}" != "${ANDROID_CLANG_REF_COMMIT}" ]]; then
+            echo "::error::Clang ref moved: expected ${ANDROID_CLANG_REF_COMMIT}, got ${actual_commit}"
+            exit 1
+          fi
+          git -C "${toolchain_repo}" sparse-checkout set "${ANDROID_CLANG_VERSION}"
+          git -C "${toolchain_repo}" checkout -q --detach "${actual_commit}"
+          mkdir -p android-clang
+          rm -rf "android-clang/${ANDROID_CLANG_VERSION}"
+          mv "${toolchain_repo}/${ANDROID_CLANG_VERSION}" android-clang/
+          rm -rf "${toolchain_repo}"
+          test -x "${ANDROID_CLANG_BIN}/clang"
+          "${ANDROID_CLANG_BIN}/clang" --version
+
+      - name: Restore LLVM 22.1.8 cache
+        if: ${{ env.TOOLCHAIN == 'llvm-22.1.8' }}
+        id: llvm-2218-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: llvm-22.1.8
+          key: marble-builder-llvm-v1-${{ runner.os }}-${{ runner.arch }}-22.1.8-df0e1ecf
+
+      - name: Fetch LLVM 22.1.8
+        if: ${{ env.TOOLCHAIN == 'llvm-22.1.8' }}
+        run: |
+          source config/marble.env
+          if [[ -x "${LLVM_22_1_8_BIN}/clang" ]]; then
+            "${LLVM_22_1_8_BIN}/clang" --version
+            exit 0
+          fi
+          archive="${RUNNER_TEMP}/LLVM-22.1.8-Linux-X64.tar.xz"
+          curl --fail --location --retry 3 --retry-delay 10 --output "${archive}" "${LLVM_22_1_8_URL}"
+          echo "${LLVM_22_1_8_SHA256}  ${archive}" | sha256sum -c -
+          rm -rf llvm-22.1.8
+          mkdir -p llvm-22.1.8
+          tar -xJf "${archive}" -C llvm-22.1.8 --strip-components=1
+          test -x "${LLVM_22_1_8_BIN}/clang"
+          "${LLVM_22_1_8_BIN}/clang" --version
+
+      - name: Select active toolchain
+        run: |
+          source config/marble.env
+          case "${TOOLCHAIN}" in
+            android-r416183b)
+              active_bin="${ANDROID_CLANG_BIN}"
+              active_id="${TOOLCHAIN}"
+              active_version="${ANDROID_CLANG_VERSION}"
+              active_commit="${ANDROID_CLANG_REF_COMMIT}"
+              active_digest=""
+              ;;
+            llvm-22.1.8)
+              active_bin="${LLVM_22_1_8_BIN}"
+              active_id="${TOOLCHAIN}"
+              active_version="LLVM 22.1.8"
+              active_commit=""
+              active_digest="${LLVM_22_1_8_SHA256}"
+              ;;
+            *)
+              echo "::error::Unsupported toolchain: ${TOOLCHAIN}"
+              exit 1
+              ;;
+          esac
+          test -x "${active_bin}/clang"
+          {
+            echo "ANDROID_CLANG_BIN=${active_bin}"
+            echo "ACTIVE_TOOLCHAIN_ID=${active_id}"
+            echo "ACTIVE_TOOLCHAIN_VERSION=${active_version}"
+            echo "ACTIVE_TOOLCHAIN_COMMIT=${active_commit}"
+            echo "ACTIVE_TOOLCHAIN_DIGEST=${active_digest}"
+          } >> "${GITHUB_ENV}"
+          "${active_bin}/clang" --version
+
+      - name: Resolve refs
+        run: bash scripts/resolve-refs.sh
+
+      - name: Generate ccache key
+        id: cache-context
+        if: ${{ inputs.enable_ccache || inputs.lto == 'thin' }}
+        run: |
+          source config/marble.env
+          source release/resolved-refs.env
+          config_hash="$(sha256sum scripts/build-kernel.sh config/marble.env config/managers.json \
+            config/kernel-sources.json scripts/resolve-kernel-source.sh \
+            | sha256sum | cut -d' ' -f1)"
+          toolchain_id="${ACTIVE_TOOLCHAIN_ID:-${TOOLCHAIN}}"
+          lto_mode="${LTO:-thin}"
+          kernel_id="${KERNEL_SOURCE:-unknown}"
+          base="marble-builder-ccache-v4-${RUNNER_OS}-${RUNNER_ARCH}-${toolchain_id}-lto${lto_mode}"
+          kernel_prefix="${base}-${kernel_id}"
+          source_prefix="${kernel_prefix}-${source_commit}"
+          manager_prefix="${source_prefix}-${MANAGER}"
+          key="${manager_prefix}-${manager_commit:-none}-${susfs_commit:-none}-${BUILD_SCOPE}-${config_hash}"
+          {
+            echo "key=${key}"
+            echo "base=${base}"
+            echo "kernel_prefix=${kernel_prefix}"
+            echo "source_prefix=${source_prefix}"
+            echo "manager_prefix=${manager_prefix}"
+            echo "lto_mode=${lto_mode}"
+            echo "thinlto_key=marble-builder-thinlto-v1-${RUNNER_OS}-${RUNNER_ARCH}-${toolchain_id}-${kernel_id}-${source_commit}-lto${lto_mode}"
+            echo "thinlto_prefix=marble-builder-thinlto-v1-${RUNNER_OS}-${RUNNER_ARCH}-${toolchain_id}-${kernel_id}-lto${lto_mode}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore ccache
+        id: ccache-restore
+        if: ${{ inputs.enable_ccache }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.cache-context.outputs.key }}
+          restore-keys: |
+            ${{ steps.cache-context.outputs.manager_prefix }}-
+            ${{ steps.cache-context.outputs.source_prefix }}-
+            ${{ steps.cache-context.outputs.kernel_prefix }}-
+            ${{ steps.cache-context.outputs.base }}-
+
+      - name: Restore ThinLTO cache
+        id: thinlto-restore
+        if: ${{ inputs.lto == 'thin' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/.cache/thinlto
+          key: ${{ steps.cache-context.outputs.thinlto_key }}
+          restore-keys: |
+            ${{ steps.cache-context.outputs.thinlto_prefix }}-
+
+      - name: Apply manager
+        run: bash scripts/patch-manager.sh
+
+      - name: Read manager version
+        run: bash scripts/read-manager-version.sh
+
+      - name: Apply SUSFS
+        run: bash scripts/apply-susfs.sh
+
+      - name: Build kernel
+        run: bash scripts/build-kernel.sh
+
+      - name: Read manager build metadata
+        run: bash scripts/read-manager-build-metadata.sh
+
+      - name: Package AnyKernel3 zip
+        run: bash scripts/package-anykernel.sh
+
+      - name: Write build info
+        run: |
+          cp release/resolved-refs.env kernel-source/release/resolved-refs.env
+          {
+            echo "kernel_source=${KERNEL_SOURCE}"
+            echo "defconfig_mode=${DEFCONFIG_MODE:-}"
+            echo "defconfig=${DEFCONFIG:-}"
+            echo "base_defconfig=${BASE_DEFCONFIG:-}"
+            echo "config_fragments=${CONFIG_FRAGMENTS:-}"
+            echo "source_repo=${SOURCE_REPO}"
+            echo "source_ref=${SOURCE_REF}"
+            echo "source_commit=$(git -C kernel-source rev-parse HEAD)"
+            echo "workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "runner_image_os=${ImageOS:-unknown}"
+            echo "runner_image_version=${ImageVersion:-unknown}"
+            echo "android_clang_version=${ACTIVE_TOOLCHAIN_VERSION}"
+            echo "android_clang_commit=${ACTIVE_TOOLCHAIN_COMMIT}"
+            echo "toolchain=${TOOLCHAIN}"
+            echo "toolchain_digest=${ACTIVE_TOOLCHAIN_DIGEST}"
+            echo "lto=${LTO:-thin}"
+            echo "ccache_key=${{ steps.cache-context.outputs.key }}"
+            echo "ccache_hit=${{ steps.ccache-restore.outputs.cache-hit || 'false' }}"
+            echo "thinlto_cache_key=${{ steps.cache-context.outputs.thinlto_key }}"
+            echo "thinlto_cache_hit=${{ steps.thinlto-restore.outputs.cache-hit || 'false' }}"
+            echo "disk_available_before_build_gib=${{ steps.disk-space.outputs.available_gib }}"
+            cat kernel-source/release/resolved-refs.env
+          } > kernel-source/release/build-info.txt
+
+      - name: Write build-info JSON
+        run: bash scripts/write-build-info-json.sh
+
+      - name: Audit flashable zip
+        run: bash scripts/audit-flashable-zip.sh
+
+      - name: Generate build summary
+        run: bash scripts/generate-build-summary.sh
+
+      - name: Set artifact name
+        id: artifact-name
+        run: echo "name=marble-flash-${{ matrix.label }}-${BUILD_SCOPE}-r${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate artifact attestation
+        uses: actions/attest@281a49d4cbb0a72c9575a50d18f6deb515a11deb # v4
+        with:
+          subject-path: kernel-source/release/*.zip
+
+      - name: Upload flashable artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.artifact-name.outputs.name }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          path: |
+            kernel-source/release/*.zip
+            kernel-source/release/*.zip.sha256
+            kernel-source/release/build-info.txt
+            kernel-source/release/build-info.json
+            kernel-source/release/summary.md
+            kernel-source/release/zip-audit.txt
+            kernel-source/release/ccache-stats.txt
+            kernel-source/release/zip-name.env
+
+      - name: Save ccache
+        if: ${{ always() && inputs.enable_ccache && !cancelled() && steps.ccache-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.cache-context.outputs.key }}
+
+      - name: Save ThinLTO cache
+        if: ${{ always() && inputs.lto == 'thin' && !cancelled() && steps.thinlto-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/.cache/thinlto
+          key: ${{ steps.cache-context.outputs.thinlto_key }}
+
+  aggregate-summary:
+    name: Generate combined summary
+    needs: build
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout builder
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Download artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: marble-flash-*-r${{ github.run_number }}
+          path: matrix-artifacts
+          merge-multiple: false
+
+      - name: Generate combined summary
+        env:
+          BUILD_SCOPE: ${{ inputs.build_scope }}
+          MATRIX_ARTIFACTS_DIR: matrix-artifacts
+          MATRIX_SUMMARY: matrix-summary.md
+        run: |
+          if compgen -G "matrix-artifacts/marble-flash-*" >/dev/null; then
+            bash scripts/generate-matrix-summary.sh
+            cat matrix-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No build artifacts found — skipping summary."
+          fi
+
+      - name: Upload combined summary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: marble-matrix-summary-r${{ github.run_number }}
+          path: matrix-summary.md
+          retention-days: 30
+          if-no-files-found: warn
+
+  release:
+    name: Create draft release
+    needs: [build, aggregate-summary]
+    if: ${{ inputs.create_draft_release == true && needs.build.result == 'success' && needs.aggregate-summary.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout builder
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Download artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: marble-flash-*-r${{ github.run_number }}
+          path: matrix-artifacts
+          merge-multiple: false
+
+      - name: Verify artifacts and prepare release
+        env:
+          BUILD_SCOPE: ${{ inputs.build_scope }}
+          MATRIX_ARTIFACTS_DIR: matrix-artifacts
+          MATRIX_SUMMARY: matrix-summary.md
+          RELEASE_ASSETS_FILE: release-assets.txt
+          SOURCE_RUN_NUMBER: ${{ github.run_number }}
+        run: bash scripts/prepare-promoted-release.sh
+
+      - name: Create release
+        run: |
+          build_date="$(date '+%Y.%m.%d')"
+
+          # Collect manager display names from artifact build-info.txt files
+          manager_labels=()
+          for dir in matrix-artifacts/*/; do
+            info="${dir}build-info.txt"
+            if [[ -f "${info}" ]]; then
+              manager="$(grep -m1 '^manager=' "${info}" | cut -d= -f2-)"
+              susfs="$(grep -m1 '^enable_susfs=' "${info}" | cut -d= -f2-)"
+              case "${manager}" in
+                kernelsu) label="KernelSU" ;;
+                kernelsu-next) label="KernelSU Next" ;;
+                sukisu-ultra) label="SukiSU Ultra" ;;
+                resukisu) label="ReSukiSU" ;;
+                *) label="${manager}" ;;
+              esac
+              if [[ "${susfs}" == "true" ]]; then
+                label="${label} + SUSFS"
+              fi
+              manager_labels+=("${label}")
+            fi
+          done
+
+          if [[ "${#manager_labels[@]}" -eq 0 ]]; then
+            echo "::error::No manager info found in artifacts"
+            exit 1
+          elif [[ "${#manager_labels[@]}" -ge 4 ]]; then
+            title="KernelSU Managers + SUSFS | ${build_date}"
+          elif [[ "${#manager_labels[@]}" -eq 1 ]]; then
+            title="${manager_labels[0]} | ${build_date}"
+          else
+            title="Marble Kernel | ${build_date}"
+          fi
+
+          tag="${build_date}"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            echo "::error::Release ${tag} already exists"
+            exit 1
+          fi
+
+          mapfile -t release_assets < release-assets.txt
+          if [[ "${#release_assets[@]}" -eq 0 ]]; then
+            echo "::error::No verified ZIP assets were prepared"
+            exit 1
+          fi
+
+          # Generate sha256sum.txt
+          sha256sum "${release_assets[@]}" > sha256sum.txt
+          release_assets+=(sha256sum.txt)
+
+          # Build release body
+          {
+            echo "Release for Poco F5 (marble)"
+            echo
+            if [[ "${#manager_labels[@]}" -gt 1 ]]; then
+              echo "## Included builds"
+              for label in "${manager_labels[@]}"; do
+                echo "- ${label}"
+              done
+            fi
+          } > release-notes.md
+
+          gh release create "${tag}" "${release_assets[@]}" \
+            --draft \
+            --target "${GITHUB_SHA}" \
+            --title "${title}" \
+            --notes-file release-notes.md

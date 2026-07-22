@@ -1,12 +1,9 @@
-*
+# Local resolve/build scratch
+/release/
 
-!.gitignore
-!LICENSE
-!README.md
-!anykernel.sh
+.tools/
 
-!META-INF/
-!META-INF/**
+# Local summary scratch from tests
+/matrix-summary.md
+/matrix-summary-release.md
 
-!tools/
-!tools/**
