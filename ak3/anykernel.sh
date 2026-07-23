@@ -30,39 +30,21 @@ ui_print "        Kernel by Pablo Escobar"
 ui_print " "
 
 is_supported_rom() {
-    local value=""
-
     if grep -qiE 'aospa|neoteric' \
         /system_root/system/build.prop \
         /product/etc/build.prop 2>/dev/null; then
         return 0
     fi
 
-    if [ -f /product/etc/build.prop ]; then
-        value="$(
-            grep -iE \
-                '^(ro\.(infinity|lunaris|ascp)\.maintainer|persist\.sys\.axion_maintainer)=' \
-                /product/etc/build.prop \
-            | cut -d= -f2- \
-            | tr '[:upper:]' '[:lower:]' \
-            | tr -d '[:space:]'
-        )"
-    elif [ -f /system_root/system/build.prop ]; then
-        value="$(
-            grep -iE \
-                '^(ro\.(infinity|lunaris|ascp)\.maintainer|persist\.sys\.axion_maintainer)=' \
-                /system_root/system/build.prop \
-            | cut -d= -f2- \
-            | tr '[:upper:]' '[:lower:]' \
-            | tr -d '[:space:]'
-        )"
+    if grep -iEh 'maintainer=' \
+        /product/etc/build.prop \
+        /system_root/system/build.prop \
+        2>/dev/null \
+        | tr '[:upper:]' '[:lower:]' \
+        | tr -d ' _-' \
+        | grep -qiE 'pabloescobar|ashwani'; then
+        return 0
     fi
-
-    case "$value" in
-        *pabloescobar*|*ashwani*)
-            return 0
-            ;;
-    esac
 
     return 1
 }

@@ -35,6 +35,26 @@ Always use the kernel package corresponding to your ROM's build date.
 
 Download the latest release from the [Releases](../../releases) section.
 
+## CI Actions
+
+This repository uses GitHub Actions to build flashable kernel zips.
+
+1. Go to the [Actions](../../actions) tab.
+2. Select **Build Marble Kernel** from the workflow list.
+3. Click **Run workflow** and fill in the options:
+
+| Option | Description |
+|--------|-------------|
+| **Kernel source** | `aosp-pablo` for AOSP-based ROMs, `aospa-pablo` for AOSPA-based ROMs |
+| **Source ref** | Leave empty to use preset default branch, or enter a branch/tag/commit to test |
+| **Toolchain** | Leave as `auto` (uses preset's recommended toolchain) |
+| **Build: ALL managers** | Check to build all 4 managers at once |
+| **Enable SUSFS** | Leave checked (default), uncheck to build without SUSFS |
+| **Create draft release** | Check to auto-create a draft GitHub Release with all ZIPs |
+
+4. Click **Run workflow** to start the build.
+5. Download the built ZIPs from the completed run's **Artifacts** section, or publish the draft release.
+
 ## Credits
 
 - [KernelSU Next Team](https://github.com/KernelSU-Next/KernelSU-Next)
