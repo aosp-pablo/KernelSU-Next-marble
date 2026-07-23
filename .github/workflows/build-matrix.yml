@@ -29,6 +29,7 @@ on:
         default: aosp-pablo
         options:
           - aosp-pablo
+          - aospa-pablo
       source_ref:
         description: "Override branch/tag/commit (empty = preset default)"
         required: false
@@ -48,6 +49,7 @@ on:
           - auto
           - android-r416183b
           - llvm-22.1.8
+          - android-r530567
       lto:
         description: "Clang LTO mode"
         type: choice
@@ -137,6 +139,7 @@ jobs:
       TOOLCHAIN: ${{ inputs.toolchain }}
       LTO: ${{ inputs.lto }}
       ANDROID_CLANG_BIN: ${{ github.workspace }}/android-clang/clang-r416183b/bin
+      ANDROID_CLANG_2024_BIN: ${{ github.workspace }}/android-clang/clang-r530567/bin
       LLVM_22_1_8_BIN: ${{ github.workspace }}/llvm-22.1.8/bin
 
     steps:
@@ -253,8 +256,47 @@ jobs:
           rm -rf "android-clang/${ANDROID_CLANG_VERSION}"
           mv "${toolchain_repo}/${ANDROID_CLANG_VERSION}" android-clang/
           rm -rf "${toolchain_repo}"
-          test -x "${ANDROID_CLANG_BIN}/clang"
+           test -x "${ANDROID_CLANG_BIN}/clang"
           "${ANDROID_CLANG_BIN}/clang" --version
+
+      - name: Restore Android clang 2024 cache
+        if: ${{ env.TOOLCHAIN == 'android-r530567' }}
+        id: android-clang-2024-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: android-clang
+          key: marble-builder-clang-v3-${{ runner.os }}-${{ runner.arch }}-clang-r530567
+
+      - name: Fetch Android clang 2024
+        if: ${{ env.TOOLCHAIN == 'android-r530567' }}
+        run: |
+          source config/marble.env
+          if [[ -x "${ANDROID_CLANG_2024_BIN}/clang" ]]; then
+            "${ANDROID_CLANG_2024_BIN}/clang" --version
+            exit 0
+          fi
+          toolchain_repo="${RUNNER_TEMP}/android-clang-2024-repo"
+          for attempt in 1 2 3; do
+            rm -rf "${toolchain_repo}"
+            if git clone --filter=blob:none --no-checkout --depth=1 \
+              --branch "${ANDROID_CLANG_2024_REF}" "${ANDROID_CLANG_REPO}" "${toolchain_repo}"; then
+              break
+            fi
+            if (( attempt == 3 )); then
+              echo "::error::Failed to fetch Android Clang 2024"
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+          actual_commit="$(git -C "${toolchain_repo}" rev-parse HEAD)"
+          git -C "${toolchain_repo}" sparse-checkout set "${ANDROID_CLANG_2024_VERSION}"
+          git -C "${toolchain_repo}" checkout -q --detach "${actual_commit}"
+          mkdir -p android-clang
+          rm -rf "android-clang/${ANDROID_CLANG_2024_VERSION}"
+          mv "${toolchain_repo}/${ANDROID_CLANG_2024_VERSION}" android-clang/
+          rm -rf "${toolchain_repo}"
+          test -x "${ANDROID_CLANG_2024_BIN}/clang"
+          "${ANDROID_CLANG_2024_BIN}/clang" --version
 
       - name: Restore LLVM 22.1.8 cache
         if: ${{ env.TOOLCHAIN == 'llvm-22.1.8' }}
@@ -290,6 +332,13 @@ jobs:
               active_id="${TOOLCHAIN}"
               active_version="${ANDROID_CLANG_VERSION}"
               active_commit="${ANDROID_CLANG_REF_COMMIT}"
+              active_digest=""
+              ;;
+            android-r530567)
+              active_bin="${ANDROID_CLANG_2024_BIN}"
+              active_id="${TOOLCHAIN}"
+              active_version="${ANDROID_CLANG_2024_VERSION}"
+              active_commit=""
               active_digest=""
               ;;
             llvm-22.1.8)

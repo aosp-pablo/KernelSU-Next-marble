@@ -123,6 +123,10 @@ grep -Fq -- "- aosp-pablo" "${workflow}" || {
     echo "FAIL: workflow missing kernel_source option: aosp-pablo" >&2
     exit 1
 }
+grep -Fq -- "- aospa-pablo" "${workflow}" || {
+    echo "FAIL: workflow missing kernel_source option: aospa-pablo" >&2
+    exit 1
+}
 
 grep -Fq 'scripts/resolve-kernel-source.sh' "${workflow}" || {
   echo "FAIL: workflow does not resolve kernel source presets" >&2

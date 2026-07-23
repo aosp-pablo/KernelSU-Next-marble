@@ -19,5 +19,25 @@
     "devicetrees": {
       "repo": "android_kernel_xiaomi_sm8450-devicetrees"
     }
+  },
+  "aospa-pablo": {
+    "branch": "beryl",
+    "kernel": {
+      "repo": "android_kernel_xiaomi_sm8450",
+      "defconfig": "gki_defconfig",
+      "toolchain": "android-r530567",
+      "config_fragments": [
+        "vendor/waipio_GKI.config",
+        "vendor/xiaomi_GKI.config",
+        "vendor/debugfs.config",
+        "vendor/marble_GKI.config"
+      ]
+    },
+    "modules": {
+      "repo": "android_kernel_xiaomi_sm8450-modules"
+    },
+    "devicetrees": {
+      "repo": "android_kernel_xiaomi_sm8450-devicetrees"
+    }
   }
 }

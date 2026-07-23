@@ -35,6 +35,7 @@ Download the latest release from the [Releases](../../releases) section.
 - [SUSFS Developers](https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android12-5.10?ref_type=heads)
 - [osm0sis (AnyKernel3)](https://github.com/osm0sis/AnyKernel3)
 - [LineageOS](https://github.com/LineageOS)
+- [ParanoidAndroid](https://github.com/AOSPA)
 - [jinetty](https://github.com/jinetty)
 - [mohdakil2426](https://github.com/mohdakil2426)
 ## Maintainer
