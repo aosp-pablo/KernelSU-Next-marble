@@ -123,6 +123,10 @@ grep -Fq -- "- aosp-pablo" "${workflow}" || {
     echo "FAIL: workflow missing kernel_source option: aosp-pablo" >&2
     exit 1
 }
+grep -Fq -- "- aospa-pablo" "${workflow}" || {
+    echo "FAIL: workflow missing kernel_source option: aospa-pablo" >&2
+    exit 1
+}
 
 grep -Fq 'scripts/resolve-kernel-source.sh' "${workflow}" || {
   echo "FAIL: workflow does not resolve kernel source presets" >&2
@@ -264,8 +268,8 @@ grep -Fq 'Generate combined summary' "${workflow}" || {
   exit 1
 }
 
-grep -Fq 'pattern: marble-flash-*-r${{ github.run_number }}' "${workflow}" || {
-  echo "FAIL: workflow does not download all matrix flash artifacts by pattern" >&2
+grep -Fq "pattern: '*'" "${workflow}" || {
+  echo "FAIL: workflow does not download all matrix artifacts" >&2
   exit 1
 }
 

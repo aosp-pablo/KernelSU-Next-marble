@@ -9,7 +9,8 @@ if [[ ! -f config/kernel-sources.json ]]; then
   exit 1
 fi
 
-eval "$(
+set +e
+resolve_output="$(
   KERNEL_SOURCE="${KERNEL_SOURCE}" SOURCE_REF="${SOURCE_REF}" python3 - config/kernel-sources.json <<'PY'
 import json
 import os
@@ -85,6 +86,12 @@ for i, checkout in enumerate(additional_checkouts, 1):
     print(f"ADDITIONAL_CHECKOUT_{i}_TARGET={shlex.quote(checkout.get('target', ''))}")
 PY
 )"
+resolve_exit=$?
+set -e
+if [[ $resolve_exit -ne 0 ]]; then
+  exit "$resolve_exit"
+fi
+eval "${resolve_output}"
 
 mkdir -p release
 {

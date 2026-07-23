@@ -21,16 +21,14 @@ if [[ -f release/kernel-source.env ]]; then
 fi
 
 TOOLCHAIN="${TOOLCHAIN:-auto}"
-if [[ "${TOOLCHAIN}" == "auto" || -z "${TOOLCHAIN}" ]]; then
-  if [[ -n "${RECOMMENDED_TOOLCHAIN:-}" ]]; then
-    TOOLCHAIN="${RECOMMENDED_TOOLCHAIN}"
-  else
-    TOOLCHAIN="android-r416183b"
-  fi
+if [[ -n "${RECOMMENDED_TOOLCHAIN:-}" ]]; then
+  TOOLCHAIN="${RECOMMENDED_TOOLCHAIN}"
+elif [[ "${TOOLCHAIN}" == "auto" || -z "${TOOLCHAIN}" ]]; then
+  TOOLCHAIN="android-r416183b"
 fi
 
 case "${TOOLCHAIN}" in
-  android-r416183b|llvm-22.1.8) ;;
+  android-r416183b|android-r530567|llvm-22.1.8) ;;
   *)
     echo "::error::Unsupported TOOLCHAIN=${TOOLCHAIN}" >&2
     exit 1

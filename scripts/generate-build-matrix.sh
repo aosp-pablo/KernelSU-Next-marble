@@ -13,6 +13,7 @@ with open(config_path, encoding="utf-8") as fh:
     managers = json.load(fh)
 
 build_all = os.environ.get("BUILD_ALL", "false") == "true"
+enable_susfs_override = os.environ.get("ENABLE_SUSFS", "")
 
 selected = [
     ("kernelsu", os.environ.get("BUILD_KERNELSU", "false")),
@@ -29,6 +30,8 @@ for manager, wanted in selected:
     meta = managers[manager]
     susfs = meta.get("susfs")
     manager_susfs = bool(susfs) and susfs is not False
+    if enable_susfs_override == "false":
+        manager_susfs = False
     label = manager
     if manager_susfs:
         label = f"{manager}-susfs"

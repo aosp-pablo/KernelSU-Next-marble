@@ -32,13 +32,19 @@ case "${MANAGER}" in
   *)             manager_token="$(sanitize_token "${MANAGER}")" ;;
 esac
 
+case "${KERNEL_SOURCE}" in
+  aosp-pablo)  preset_prefix="" ;;
+  aospa-pablo) preset_prefix="aospa-" ;;
+  *)           preset_prefix="$(sanitize_token "${KERNEL_SOURCE}")-" ;;
+esac
+
 susfs_segment=""
 if [[ "${ENABLE_SUSFS}" == "true" ]]; then
   susfs_segment="_susfs"
 fi
 
 build_date="$(date '+%Y.%m.%d')"
-zip_name="${manager_token}${susfs_segment}-marble-${build_date}.zip"
+zip_name="${preset_prefix}${manager_token}${susfs_segment}-marble-${build_date}.zip"
 
 if [[ "${PACKAGE_NAME_ONLY:-false}" == "true" ]]; then
   printf '%s\n' "${zip_name}"

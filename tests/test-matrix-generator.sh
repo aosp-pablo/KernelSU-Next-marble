@@ -49,3 +49,32 @@ assert [item["label"] for item in items] == ["kernelsu"]
 PY
 
 echo "Matrix generator tests passed"
+
+# ENABLE_SUSFS=false override forces all managers to disable SUSFS
+matrix_optout="$(
+  ENABLE_SUSFS=false \
+  BUILD_KERNELSU_NEXT=true \
+  BUILD_SUKISU_ULTRA=true \
+  BUILD_RESUKISU=true \
+  GITHUB_OUTPUT=/dev/null \
+  bash scripts/generate-build-matrix.sh
+)"
+python3 - "${matrix_optout}" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+items = data["include"]
+assert [item["manager"] for item in items] == [
+    "kernelsu-next",
+    "sukisu-ultra",
+    "resukisu",
+]
+assert [item["enable_susfs"] for item in items] == ["false", "false", "false"]
+assert [item["label"] for item in items] == [
+    "kernelsu-next",
+    "sukisu-ultra",
+    "resukisu",
+]
+print("SUSFS opt-out override test passed")
+PY

@@ -32,6 +32,12 @@ ui_print " "
 is_supported_rom() {
     local value=""
 
+    if grep -qiE 'aospa|neoteric' \
+        /system_root/system/build.prop \
+        /product/etc/build.prop 2>/dev/null; then
+        return 0
+    fi
+
     if [ -f /product/etc/build.prop ]; then
         value="$(
             grep -iE \

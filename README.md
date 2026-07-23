@@ -11,10 +11,14 @@ Flashable AnyKernel3 package providing KernelSU Next and SUSFS support for Poco 
 1. Reboot to OrangeFox Recovery.
 2. Flash the latest `ksun_susfs-marble-YYYY.MM.DD.zip` matching your ROM build date.
 
+For AOSPA-based ROMs flash `aospa-ksun_susfs-marble-YYYY.MM.DD.zip`.
+
 Examples:
 
 - InfinityX 2026-06-09 → `ksun_susfs-marble-2026.06.09.zip`
 - AxionOS 2026-06-09 → `ksun_susfs-marble-2026.06.09.zip`
+- AOSPA 2026-07-15 → `aospa-ksun_susfs-marble-2026.07.15.zip`
+- Neoteric 2026-07-20 → `aospa-ksun_susfs-marble-2026.07.20.zip`
 
 Always use the kernel package corresponding to your ROM's build date.
 
@@ -24,6 +28,8 @@ Always use the kernel package corresponding to your ROM's build date.
 
 - InfinityX (Official)
 - AxionOS (Official)
+- AOSPA / Paranoid Android
+- Neoteric OS
 
 ## Downloads
 
@@ -35,6 +41,7 @@ Download the latest release from the [Releases](../../releases) section.
 - [SUSFS Developers](https://gitlab.com/simonpunk/susfs4ksu/-/tree/gki-android12-5.10?ref_type=heads)
 - [osm0sis (AnyKernel3)](https://github.com/osm0sis/AnyKernel3)
 - [LineageOS](https://github.com/LineageOS)
+- [ParanoidAndroid](https://github.com/AOSPA)
 - [jinetty](https://github.com/jinetty)
 - [mohdakil2426](https://github.com/mohdakil2426)
 ## Maintainer
